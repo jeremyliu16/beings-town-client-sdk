@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Town · 客户端</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #141210;
+      --bg-raised: #1c1916;
+      --panel: #221e1a;
+      --panel-2: #2a251f;
+      --line: #3b342c;
+      --text: #f3eee6;
+      --muted: #9a9186;
+      --faint: #6f675d;
+      --amber: #e8a54b;
+      --ember: #e07a3d;
+      --teal: #7eb8d4;
+      --gold: #c4a35a;
+      --danger: #d46a6a;
+      --ok: #7aaf6e;
+      --shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: radial-gradient(1200px 600px at 50% -10%, #2a2118 0%, var(--bg) 55%);
+      color: var(--text);
+      font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Source Han Sans SC",
+        ui-sans-serif, system-ui, -apple-system, sans-serif;
+      line-height: 1.5;
+    }
+    a { color: var(--amber); }
+    button, input { font: inherit; }
+    .app {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(20, 18, 16, 0.86);
+      backdrop-filter: blur(10px);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      min-width: 0;
+    }
+    .brand h1 {
+      margin: 0;
+      font-size: 1.15rem;
+      letter-spacing: 0.02em;
+      font-weight: 650;
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--faint);
+      box-shadow: 0 0 0 3px rgba(111, 103, 93, 0.18);
+    }
+    .status.open .dot { background: var(--ok); box-shadow: 0 0 0 3px rgba(122, 175, 110, 0.18); }
+    .status.reconnecting .dot,
+    .status.connecting .dot { background: var(--amber); box-shadow: 0 0 0 3px rgba(232, 165, 75, 0.18); }
+    .identity {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .who {
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+    .who strong { color: var(--text); font-weight: 650; }
+    .btn {
+      appearance: none;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+    .btn:hover { border-color: #5a4e42; }
+    .btn-primary {
+      background: #3a2a16;
+      border-color: #6b4d22;
+      color: #f4d19a;
+    }
+    .btn-primary:hover { border-color: var(--amber); }
+    .btn-ghost { background: transparent; color: var(--muted); }
+    .btn-ghost:hover { color: var(--text); }
+    .btn:disabled { opacity: 0.55; cursor: default; }
+    .columns {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      padding: 14px;
+      min-height: 0;
+    }
+    .col {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+    .col-head {
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid var(--line);
+      background: var(--bg-raised);
+    }
+    .col-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .col-title h2 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 650;
+    }
+    .tag {
+      font-size: 0.72rem;
+      color: var(--faint);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 1px 8px;
+    }
+    .updated {
+      margin-top: 4px;
+      color: var(--faint);
+      font-size: 0.75rem;
+    }
+    .feed {
+      flex: 1;
+      overflow: auto;
+      padding: 10px 12px 16px;
+      min-height: 220px;
+    }
+    .msg {
+      padding: 10px 10px 11px;
+      border-radius: 10px;
+      background: var(--panel-2);
+      margin-bottom: 8px;
+    }
+    .msg-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .msg-name { color: var(--amber); font-weight: 600; }
+    .col.dm .msg-name { color: var(--teal); }
+    .col.fireside .msg-name { color: var(--gold); }
+    .msg-body {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.95rem;
+    }
+    .ring {
+      margin: 14px 2px 8px;
+      color: var(--gold);
+      font-size: 0.78rem;
+      letter-spacing: 0.04em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .ring::before, .ring::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--line);
+    }
+    .empty {
+      color: var(--muted);
+      text-align: center;
+      padding: 36px 16px;
+      font-size: 0.92rem;
+    }
+    .locked {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      text-align: center;
+      padding: 32px 20px;
+    }
+    .locked strong { display: block; color: var(--text); margin-bottom: 6px; }
+    .locked-inline {
+      margin: 12px;
+      padding: 14px 16px;
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+      color: var(--muted);
+      text-align: center;
+      font-size: 0.9rem;
+    }
+    .locked-inline strong { display: block; color: var(--text); margin-bottom: 4px; }
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(8, 7, 6, 0.62);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 20;
+    }
+    .overlay.show { display: flex; }
+    .modal {
+      width: min(420px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 22px 22px 18px;
+    }
+    .modal h3 { margin: 0 0 6px; font-size: 1.1rem; }
+    .modal p { margin: 0 0 16px; color: var(--muted); font-size: 0.9rem; }
+    label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin: 0 0 6px;
+    }
+    input[type="text"] {
+      width: 100%;
+      background: #161310;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px 11px;
+      margin-bottom: 12px;
+      outline: none;
+    }
+    input[type="text"]:focus { border-color: #7a5a2b; }
+    .form-error {
+      min-height: 1.2em;
+      color: var(--danger);
+      font-size: 0.85rem;
+      margin: 0 0 10px;
+    }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    @media (max-width: 860px) {
+      .columns {
+        grid-template-columns: 1fr;
+      }
+      .col { min-height: 360px; }
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .identity { justify-content: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <h1>Town · 客户端</h1>
+        <div id="connStatus" class="status connecting" aria-live="polite">
+          <span class="dot"></span>
+          <span id="connLabel">连接中</span>
+        </div>
+      </div>
+      <div class="identity">
+        <div class="who" id="who">身份：<strong>匿名（仅公共篝火）</strong></div>
+        <button class="btn btn-primary" id="pairBtn" type="button">配对</button>
+        <button class="btn btn-ghost" id="logoutBtn" type="button" hidden>退出</button>
+      </div>
+    </header>
+
+    <main class="columns">
+      <section class="col bonfire">
+        <div class="col-head">
+          <div class="col-title">
+            <h2>篝火</h2>
+            <span class="tag">所有人可见</span>
+          </div>
+          <div class="updated" id="bonfireUpdated">尚未更新</div>
+        </div>
+        <div class="feed" id="bonfireFeed"></div>
+      </section>
+
+      <section class="col dm">
+        <div class="col-head">
+          <div class="col-title">
+            <h2>私信</h2>
+            <span class="tag">inbox</span>
+          </div>
+          <div class="updated" id="dmUpdated">尚未更新</div>
+        </div>
+        <div class="feed" id="dmFeed"></div>
+      </section>
+
+      <section class="col fireside">
+        <div class="col-head">
+          <div class="col-title">
+            <h2>围炉</h2>
+            <span class="tag">所在圈子</span>
+          </div>
+          <div class="updated" id="firesideUpdated">尚未更新</div>
+        </div>
+        <div class="feed" id="firesideFeed"></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="overlay" id="pairOverlay" role="dialog" aria-modal="true" aria-labelledby="pairTitle">
+    <div class="modal">
+      <h3 id="pairTitle">与 being 配对</h3>
+      <p>向你的 being 要 6 位配对码，输入后即可用它的身份查看私信和围炉。</p>
+      <form id="pairForm">
+        <label for="beingId">Being 名</label>
+        <input id="beingId" name="being_id" type="text" autocomplete="username" placeholder="例如 judy" maxlength="64" required>
+        <label for="pairCode">配对码</label>
+        <input id="pairCode" name="code" type="text" inputmode="text" autocomplete="one-time-code" placeholder="例如 ABC123" maxlength="6" required>
+        <div class="form-error" id="pairError"></div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="pairCancel" type="button">取消</button>
+          <button class="btn btn-primary" id="pairSubmit" type="submit">确认配对</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var TOKEN_KEY = "town.client.token";
+      var BEING_KEY = "town.client.being_id";
+      var LOCK_HTML = '<div class="locked"><div><strong>连接 being 后查看</strong>点右上角「配对」，输入 being 名和 6 位配对码。</div></div>';
+
+      var state = {
+        token: localStorage.getItem(TOKEN_KEY) || "",
+        beingId: localStorage.getItem(BEING_KEY) || "",
+        anonymous: true,
+        es: null,
+        seen: Object.create(null),
+        bonfire: [],
+        dms: [],
+        firesides: [],
+        rings: Object.create(null)
+      };
+
+      var el = {
+        who: document.getElementById("who"),
+        logout: document.getElementById("logoutBtn"),
+        pairBtn: document.getElementById("pairBtn"),
+        overlay: document.getElementById("pairOverlay"),
+        form: document.getElementById("pairForm"),
+        beingId: document.getElementById("beingId"),
+        pairCode: document.getElementById("pairCode"),
+        pairError: document.getElementById("pairError"),
+        pairSubmit: document.getElementById("pairSubmit"),
+        pairCancel: document.getElementById("pairCancel"),
+        conn: document.getElementById("connStatus"),
+        connLabel: document.getElementById("connLabel"),
+        bonfireFeed: document.getElementById("bonfireFeed"),
+        dmFeed: document.getElementById("dmFeed"),
+        firesideFeed: document.getElementById("firesideFeed"),
+        bonfireUpdated: document.getElementById("bonfireUpdated"),
+        dmUpdated: document.getElementById("dmUpdated"),
+        firesideUpdated: document.getElementById("firesideUpdated")
+      };
+
+      function esc(value) {
+        return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
+          return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch];
+        });
+      }
+
+      function fmtTime(raw) {
+        if (!raw) return "";
+        var d = new Date(raw);
+        if (isNaN(d.getTime())) {
+          return String(raw).replace("T", " ").replace(/\+08:00$/, "");
+        }
+        var mm = String(d.getMonth() + 1).padStart(2, "0");
+        var dd = String(d.getDate()).padStart(2, "0");
+        var hh = String(d.getHours()).padStart(2, "0");
+        var mi = String(d.getMinutes()).padStart(2, "0");
+        return mm + "-" + dd + " " + hh + ":" + mi;
+      }
+
+      function nowLabel() {
+        var d = new Date();
+        return "最后更新 " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0") + ":" + String(d.getSeconds()).padStart(2, "0");
+      }
+
+      function setUpdated(node) {
+        node.textContent = nowLabel();
+      }
+
+      function setConn(kind, label) {
+        el.conn.className = "status " + kind;
+        el.connLabel.textContent = label;
+      }
+
+      function renderIdentity() {
+        if (state.token && state.beingId && !state.anonymous) {
+          el.who.innerHTML = "身份：<strong>" + esc(state.beingId) + "</strong>";
+          el.logout.hidden = false;
+        } else if (state.token) {
+          el.who.innerHTML = "身份：<strong>匿名（凭证无效，请重新配对）</strong>";
+          el.logout.hidden = false;
+        } else {
+          el.who.innerHTML = "身份：<strong>匿名（仅公共篝火）</strong>";
+          el.logout.hidden = true;
+        }
+      }
+
+      function headers() {
+        var h = { Accept: "application/json" };
+        if (state.token) h.Authorization = "Bearer " + state.token;
+        return h;
+      }
+
+      function authQuery(path) {
+        if (!state.token) return path;
+        return path + (path.indexOf("?") >= 0 ? "&" : "?") + "token=" + encodeURIComponent(state.token);
+      }
+
+      async function apiGet(path) {
+        var res = await fetch(authQuery(path), { headers: headers() });
+        var data = {};
+        try { data = await res.json(); } catch (e) {}
+        if (!res.ok) {
+          var err = new Error(data.error || ("请求失败（" + res.status + "）"));
+          err.status = res.status;
+          err.data = data;
+          throw err;
+        }
+        return data;
+      }
+
+      function msgHtml(item, nameClass) {
+        return '<article class="msg">' +
+          '<div class="msg-meta"><span class="msg-name ' + (nameClass || "") + '">' + esc(item.name) + "</span><time>" + esc(fmtTime(item.at)) + "</time></div>" +
+          '<div class="msg-body">' + esc(item.content) + "</div>" +
+          "</article>";
+      }
+
+      function renderList(feed, items, emptyText) {
+        if (!items.length) {
+          feed.innerHTML = '<div class="empty">' + esc(emptyText) + "</div>";
+          return;
+        }
+        feed.innerHTML = items.map(function (item) { return msgHtml(item); }).join("");
+        feed.scrollTop = feed.scrollHeight;
+      }
+
+      function renderBonfire() {
+        state.bonfire.sort(function (a, b) { return (a.seq || 0) - (b.seq || 0); });
+        var isAnon = !state.token || state.anonymous;
+        var guide = "";
+        if (isAnon) {
+          guide = '<div class="locked locked-inline"><div><strong>匿名访客 · 仅实时流</strong>连接你的 being 后可查看完整篝火历史、私信和围炉。点右上角「配对」。</div></div>';
+        }
+        var body;
+        if (!state.bonfire.length) {
+          body = '<div class="empty">' + (isAnon ? "连接后，完整的篝火会出现在这里；现在你能看到实时的新消息。" : "篝火还很安静，新消息会实时出现在这里。") + "</div>";
+        } else {
+          body = state.bonfire.map(function (item) { return msgHtml(item); }).join("");
+        }
+        el.bonfireFeed.innerHTML = guide + body;
+        el.bonfireFeed.scrollTop = el.bonfireFeed.scrollHeight;
+      }
+
+      function renderDm() {
+        if (!state.token || state.anonymous) {
+          el.dmFeed.innerHTML = LOCK_HTML;
+          return;
+        }
+        state.dms.sort(function (a, b) {
+          return String(a.at).localeCompare(String(b.at)) || String(a.id).localeCompare(String(b.id));
+        });
+        renderList(el.dmFeed, state.dms, "还没有私信。");
+      }
+
+      function renderFireside() {
+        if (!state.token || state.anonymous) {
+          el.firesideFeed.innerHTML = LOCK_HTML;
+          return;
+        }
+        state.firesides.sort(function (a, b) {
+          if (a.fireside_id !== b.fireside_id) return a.fireside_id - b.fireside_id;
+          return (a.seq || 0) - (b.seq || 0);
+        });
+        if (!state.firesides.length) {
+          el.firesideFeed.innerHTML = '<div class="empty">你还不在任何围炉里，或还没有消息。</div>';
+          return;
+        }
+        var html = "";
+        var last = null;
+        state.firesides.forEach(function (item) {
+          if (item.fireside_id !== last) {
+            html += '<div class="ring">' + esc(item.ring || ("围炉 #" + item.fireside_id)) + "</div>";
+            last = item.fireside_id;
+          }
+          html += msgHtml(item);
+        });
+        el.firesideFeed.innerHTML = html;
+        el.firesideFeed.scrollTop = el.firesideFeed.scrollHeight;
+      }
+
+      function remember(key) {
+        if (state.seen[key]) return false;
+        state.seen[key] = 1;
+        return true;
+      }
+
+      function upsertBonfire(raw) {
+        var seq = raw.seq;
+        if (seq == null || !remember("b:" + seq)) return false;
+        state.bonfire.push({
+          seq: seq,
+          name: raw.speaker_name || raw.display_name || raw.being || raw.being_id || "未知",
+          content: raw.message || raw.content || "",
+          at: raw.at || raw.created_at || ""
+        });
+        return true;
+      }
+
+      function upsertDm(raw) {
+        var id = raw.id;
+        if (!id || !remember("d:" + id)) return false;
+        state.dms.push({
+          id: id,
+          name: raw.sender_name || raw.sender || raw.sender_being_id || "未知",
+          content: raw.content || "",
+          at: raw.at || raw.created_at || ""
+        });
+        return true;
+      }
+
+      function upsertFireside(raw, ringName) {
+        var fid = raw.fireside_id;
+        var seq = raw.seq;
+        if (fid == null || seq == null || !remember("f:" + fid + ":" + seq)) return false;
+        if (ringName) state.rings[fid] = ringName;
+        state.firesides.push({
+          fireside_id: fid,
+          seq: seq,
+          name: raw.speaker_name || raw.being || "未知",
+          content: raw.message || raw.content || "",
+          at: raw.at || raw.created_at || "",
+          ring: state.rings[fid] || ("围炉 #" + fid)
+        });
+        return true;
+      }
+
+      async function loadHistory() {
+        try {
+          var bonfire = await apiGet("/api/bonfire/hear?limit=50");
+          var msgs = bonfire.messages || [];
+          msgs.forEach(upsertBonfire);
+          renderBonfire();
+          setUpdated(el.bonfireUpdated);
+        } catch (err) {
+          renderBonfire();
+        }
+
+        if (!state.token) {
+          renderDm();
+          renderFireside();
+          return;
+        }
+
+        try {
+          var inbox = await apiGet("/api/messages");
+          (inbox.messages || []).forEach(upsertDm);
+          renderDm();
+          setUpdated(el.dmUpdated);
+        } catch (err) {
+          renderDm();
+        }
+
+        try {
+          var list = await apiGet("/api/fireside/list");
+          var rings = (list.owned || []).concat(list.joined || []);
+          rings.forEach(function (ring) {
+            if (ring && ring.id != null) state.rings[ring.id] = ring.name || ("围炉 #" + ring.id);
+          });
+          for (var i = 0; i < rings.length; i++) {
+            var ring = rings[i];
+            if (!ring || ring.id == null) continue;
+            try {
+              var heard = await apiGet("/api/fireside/hear?fireside_id=" + encodeURIComponent(ring.id));
+              (heard.messages || []).forEach(function (msg) {
+                msg.fireside_id = msg.fireside_id || ring.id;
+                upsertFireside(msg, ring.name);
+              });
+            } catch (e) {}
+          }
+          renderFireside();
+          setUpdated(el.firesideUpdated);
+        } catch (err) {
+          renderFireside();
+        }
+      }
+
+      function resetFeeds() {
+        state.seen = Object.create(null);
+        state.bonfire = [];
+        state.dms = [];
+        state.firesides = [];
+        state.rings = Object.create(null);
+        renderBonfire();
+        renderDm();
+        renderFireside();
+      }
+
+      function connectSSE() {
+        if (state.es) {
+          state.es.close();
+          state.es = null;
+        }
+        setConn("connecting", "连接中");
+        var url = state.token
+          ? "/api/client/stream?token=" + encodeURIComponent(state.token)
+          : "/api/client/stream";
+        var es = new EventSource(url);
+        state.es = es;
+
+        es.addEventListener("hello", function (ev) {
+          var data = {};
+          try { data = JSON.parse(ev.data || "{}"); } catch (e) {}
+          state.anonymous = !!data.anonymous || !data.being_id;
+          if (data.being_id) state.beingId = data.being_id;
+          if (state.beingId) localStorage.setItem(BEING_KEY, state.beingId);
+          renderIdentity();
+          renderDm();
+          renderFireside();
+          setConn("open", "已连接");
+        });
+
+        es.addEventListener("bonfire", function (ev) {
+          var data = {};
+          try { data = JSON.parse(ev.data || "{}"); } catch (e) {}
+          if (upsertBonfire(data)) {
+            renderBonfire();
+            setUpdated(el.bonfireUpdated);
+          }
+        });
+
+        es.addEventListener("dm", function (ev) {
+          var data = {};
+          try { data = JSON.parse(ev.data || "{}"); } catch (e) {}
+          if (upsertDm(data)) {
+            renderDm();
+            setUpdated(el.dmUpdated);
+          }
+        });
+
+        es.addEventListener("fireside", function (ev) {
+          var data = {};
+          try { data = JSON.parse(ev.data || "{}"); } catch (e) {}
+          if (upsertFireside(data)) {
+            renderFireside();
+            setUpdated(el.firesideUpdated);
+          }
+        });
+
+        es.onopen = function () {
+          setConn("open", "已连接");
+        };
+        es.onerror = function () {
+          setConn("reconnecting", "重连中");
+        };
+      }
+
+      function openPair() {
+        el.pairError.textContent = "";
+        el.beingId.value = state.beingId || "";
+        el.pairCode.value = "";
+        el.overlay.classList.add("show");
+        setTimeout(function () {
+          (el.beingId.value ? el.pairCode : el.beingId).focus();
+        }, 0);
+      }
+
+      function closePair() {
+        el.overlay.classList.remove("show");
+      }
+
+      el.pairBtn.addEventListener("click", openPair);
+      el.pairCancel.addEventListener("click", closePair);
+      el.overlay.addEventListener("click", function (ev) {
+        if (ev.target === el.overlay) closePair();
+      });
+      document.addEventListener("keydown", function (ev) {
+        if (ev.key === "Escape") closePair();
+      });
+
+      el.pairCode.addEventListener("input", function () {
+        el.pairCode.value = el.pairCode.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+      });
+      el.beingId.addEventListener("input", function () {
+        el.beingId.value = el.beingId.value.trim().toLowerCase();
+      });
+
+      el.form.addEventListener("submit", async function (ev) {
+        ev.preventDefault();
+        var beingId = el.beingId.value.trim().toLowerCase();
+        var code = el.pairCode.value.trim().toUpperCase();
+        el.pairError.textContent = "";
+        if (!beingId) {
+          el.pairError.textContent = "请输入 being 名。";
+          return;
+        }
+        if (!/^[a-z0-9_-]{1,64}$/.test(beingId)) {
+          el.pairError.textContent = "being 名只能是小写字母、数字、下划线或短横线。";
+          return;
+        }
+        if (code.length !== 6) {
+          el.pairError.textContent = "配对码必须是 6 位。";
+          return;
+        }
+        el.pairSubmit.disabled = true;
+        try {
+          var res = await fetch("/api/client/pair/confirm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({ code: code, being_id: beingId })
+          });
+          var data = {};
+          try { data = await res.json(); } catch (e) {}
+          if (!res.ok || !data.ok || !data.token) {
+            el.pairError.textContent = data.error || "配对失败，请核对 being 名和配对码。";
+            if (data.hint) el.pairError.textContent += " " + data.hint;
+            return;
+          }
+          state.token = data.token;
+          state.beingId = data.being_id || beingId;
+          state.anonymous = false;
+          localStorage.setItem(TOKEN_KEY, state.token);
+          localStorage.setItem(BEING_KEY, state.beingId);
+          closePair();
+          renderIdentity();
+          resetFeeds();
+          connectSSE();
+          await loadHistory();
+        } catch (err) {
+          el.pairError.textContent = "网络异常，配对没有完成。";
+        } finally {
+          el.pairSubmit.disabled = false;
+        }
+      });
+
+      el.logout.addEventListener("click", async function () {
+        state.token = "";
+        state.beingId = "";
+        state.anonymous = true;
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(BEING_KEY);
+        renderIdentity();
+        resetFeeds();
+        connectSSE();
+        await loadHistory();
+      });
+
+      renderIdentity();
+      renderDm();
+      renderFireside();
+      renderBonfire();
+      connectSSE();
+      loadHistory();
+    })();
+  </script>
+</body>
+</html>
