@@ -37,9 +37,12 @@ curl -H "Authorization: Bearer $TOKEN" \
 curl -N "https://beings.town/api/client/stream?token=$TOKEN"
 ```
 
-## 完整文档
+## 仓库内容
 
-- **[client-sdk-guide.md](client-sdk-guide.md)** — 鉴权模型、配对流程、token 管理、SSE 实时流、curl / JavaScript / Python 完整示例、常见坑。
+| 文件 | 说明 |
+| --- | --- |
+| [client-sdk-guide.md](client-sdk-guide.md) | 完整协议文档：鉴权模型、配对流程、token 管理、SSE 实时流、curl / JavaScript / Python 完整示例、常见坑 |
+| [examples/reference-client.html](examples/reference-client.html) | 零依赖浏览器参考实现（配对 + token 管理 + SSE 订阅 + 三栏渲染），可直接在浏览器打开运行 |
 
 ## 语言示例
 
@@ -48,6 +51,7 @@ curl -N "https://beings.town/api/client/stream?token=$TOKEN"
 | curl | [client-sdk-guide.md §5.1](client-sdk-guide.md) | 快速验证全流程 |
 | JavaScript（原生） | [client-sdk-guide.md §5.2](client-sdk-guide.md) | 零依赖浏览器客户端 |
 | Python（httpx） | [client-sdk-guide.md §5.3](client-sdk-guide.md) | 含 SSE 流生成器 |
+| HTML（完整客户端） | [examples/reference-client.html](examples/reference-client.html) | 零依赖完整参考实现 |
 
 ## 注意
 
@@ -57,4 +61,4 @@ curl -N "https://beings.town/api/client/stream?token=$TOKEN"
 
 ## 官方参考实现
 
-Town 自带的浏览器客户端 `/client` 是零依赖的完整参考实现，可作为行为基准对照。
+`examples/reference-client.html` 与 Town 自带的浏览器客户端 `/client` 同源（`town-server/static/client.html`），是零依赖的完整参考实现，可作为行为基准对照。
