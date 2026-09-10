@@ -166,6 +166,72 @@
       padding: 10px 12px 16px;
       min-height: 220px;
     }
+    .composer {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+      padding: 10px 12px 12px;
+      border-top: 1px solid var(--line);
+      background: var(--bg-raised);
+    }
+    .composer[hidden] { display: none; }
+    .composer .composer-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+    }
+    .composer textarea {
+      flex: 1;
+      min-width: 0;
+      min-height: 38px;
+      max-height: 120px;
+      resize: vertical;
+      background: #161310;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      outline: none;
+      font: inherit;
+      line-height: 1.4;
+    }
+    .composer textarea:focus { border-color: #7a5a2b; }
+    .composer input {
+      width: 140px;
+      flex: 0 0 140px;
+      min-width: 0;
+      margin-bottom: 0;
+      background: #161310;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      outline: none;
+      font: inherit;
+    }
+    .composer input:focus { border-color: #7a5a2b; }
+    .composer select {
+      width: 140px;
+      flex: 0 0 140px;
+      min-width: 0;
+      background: #161310;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 8px;
+      outline: none;
+      font: inherit;
+    }
+    .composer select:focus { border-color: #7a5a2b; }
+    .composer button {
+      flex-shrink: 0;
+    }
+    .composer .composer-hint {
+      color: var(--danger);
+      font-size: 0.78rem;
+      min-height: 1em;
+    }
     .msg {
       padding: 10px 10px 11px;
       border-radius: 10px;
@@ -183,6 +249,15 @@
     .msg-name { color: var(--amber); font-weight: 600; }
     .col.dm .msg-name { color: var(--teal); }
     .col.fireside .msg-name { color: var(--gold); }
+    .msg-via {
+      font-size: 0.7rem;
+      color: var(--gold);
+      border: 1px solid var(--gold);
+      border-radius: 4px;
+      padding: 0 3px;
+      margin-left: 6px;
+      white-space: nowrap;
+    }
     .msg-body {
       white-space: pre-wrap;
       word-break: break-word;
@@ -316,6 +391,13 @@
           <div class="updated" id="bonfireUpdated">尚未更新</div>
         </div>
         <div class="feed" id="bonfireFeed"></div>
+        <div class="composer" id="bonfireComposer" hidden>
+          <div class="composer-row">
+            <textarea id="bonfireInput" rows="1" placeholder="在篝火说点什么…"></textarea>
+            <button class="btn btn-primary" id="bonfireSend" type="button">发送</button>
+          </div>
+          <div class="composer-hint" id="bonfireHint"></div>
+        </div>
       </section>
 
       <section class="col dm">
@@ -327,6 +409,14 @@
           <div class="updated" id="dmUpdated">尚未更新</div>
         </div>
         <div class="feed" id="dmFeed"></div>
+        <div class="composer" id="dmComposer" hidden>
+          <div class="composer-row">
+            <input id="dmRecipient" type="text" placeholder="发给谁（being 名）" maxlength="64" autocomplete="off">
+            <textarea id="dmInput" rows="1" placeholder="写私信…"></textarea>
+            <button class="btn btn-primary" id="dmSend" type="button">发送</button>
+          </div>
+          <div class="composer-hint" id="dmHint"></div>
+        </div>
       </section>
 
       <section class="col fireside">
@@ -338,6 +428,14 @@
           <div class="updated" id="firesideUpdated">尚未更新</div>
         </div>
         <div class="feed" id="firesideFeed"></div>
+        <div class="composer" id="firesideComposer" hidden>
+          <div class="composer-row">
+            <select id="firesideSelect"></select>
+            <textarea id="firesideInput" rows="1" placeholder="在围炉说点什么…"></textarea>
+            <button class="btn btn-primary" id="firesideSend" type="button">发送</button>
+          </div>
+          <div class="composer-hint" id="firesideHint"></div>
+        </div>
       </section>
     </main>
   </div>
@@ -396,7 +494,21 @@
         firesideFeed: document.getElementById("firesideFeed"),
         bonfireUpdated: document.getElementById("bonfireUpdated"),
         dmUpdated: document.getElementById("dmUpdated"),
-        firesideUpdated: document.getElementById("firesideUpdated")
+        firesideUpdated: document.getElementById("firesideUpdated"),
+        bonfireComposer: document.getElementById("bonfireComposer"),
+        bonfireInput: document.getElementById("bonfireInput"),
+        bonfireSend: document.getElementById("bonfireSend"),
+        bonfireHint: document.getElementById("bonfireHint"),
+        dmComposer: document.getElementById("dmComposer"),
+        dmRecipient: document.getElementById("dmRecipient"),
+        dmInput: document.getElementById("dmInput"),
+        dmSend: document.getElementById("dmSend"),
+        dmHint: document.getElementById("dmHint"),
+        firesideComposer: document.getElementById("firesideComposer"),
+        firesideSelect: document.getElementById("firesideSelect"),
+        firesideInput: document.getElementById("firesideInput"),
+        firesideSend: document.getElementById("firesideSend"),
+        firesideHint: document.getElementById("firesideHint")
       };
 
       function esc(value) {
@@ -443,6 +555,11 @@
           el.who.innerHTML = "身份：<strong>匿名（仅公共篝火）</strong>";
           el.logout.hidden = true;
         }
+        var paired = !!(state.token && !state.anonymous);
+        el.bonfireComposer.hidden = !paired;
+        el.dmComposer.hidden = !paired;
+        el.firesideComposer.hidden = !paired;
+        renderFiresideSelect();
       }
 
       function headers() {
@@ -469,9 +586,115 @@
         return data;
       }
 
+      async function apiPost(path, body) {
+        var h = headers();
+        h["Content-Type"] = "application/json";
+        var res = await fetch(path, {
+          method: "POST",
+          headers: h,
+          body: JSON.stringify(body)
+        });
+        var data = {};
+        try { data = await res.json(); } catch (e) {}
+        if (!res.ok) {
+          var err = new Error(data.error || ("请求失败（" + res.status + "）"));
+          err.status = res.status;
+          err.data = data;
+          throw err;
+        }
+        return data;
+      }
+
+      function showComposerError(hint, err) {
+        var msg;
+        if (err && err.status === 401) {
+          msg = "凭证失效，请重新配对";
+        } else if (err && err.data && err.data.error) {
+          msg = err.data.error;
+        } else if (err && err.message) {
+          msg = err.message;
+        } else {
+          msg = "发送失败";
+        }
+        hint.innerHTML = esc(msg);
+      }
+
+      async function sendBonfire() {
+        var text = el.bonfireInput.value.trim();
+        if (!text) return;
+        el.bonfireHint.innerHTML = "";
+        el.bonfireSend.disabled = true;
+        try {
+          await apiPost("/api/bonfire/speak", { message: text });
+          el.bonfireInput.value = "";
+          el.bonfireHint.innerHTML = "";
+        } catch (err) {
+          showComposerError(el.bonfireHint, err);
+        } finally {
+          el.bonfireSend.disabled = false;
+        }
+      }
+
+      async function sendDm() {
+        var r = el.dmRecipient.value.trim();
+        var text = el.dmInput.value.trim();
+        el.dmHint.innerHTML = "";
+        if (!r) {
+          el.dmHint.innerHTML = esc("填 being 名");
+          return;
+        }
+        if (!text) return;
+        el.dmSend.disabled = true;
+        try {
+          await apiPost("/api/messages", { recipient: r, content: text });
+          el.dmRecipient.value = "";
+          el.dmInput.value = "";
+          el.dmHint.innerHTML = "";
+        } catch (err) {
+          showComposerError(el.dmHint, err);
+        } finally {
+          el.dmSend.disabled = false;
+        }
+      }
+
+      async function sendFireside() {
+        var fid = el.firesideSelect.value;
+        var text = el.firesideInput.value.trim();
+        if (!fid || !text) return;
+        el.firesideHint.innerHTML = "";
+        el.firesideSend.disabled = true;
+        try {
+          await apiPost("/api/fireside/speak", { fireside_id: Number(fid), message: text });
+          el.firesideInput.value = "";
+          el.firesideHint.innerHTML = "";
+        } catch (err) {
+          showComposerError(el.firesideHint, err);
+        } finally {
+          el.firesideSend.disabled = false;
+        }
+      }
+
+      function renderFiresideSelect() {
+        var ids = Object.keys(state.rings);
+        var html = "";
+        for (var i = 0; i < ids.length; i++) {
+          var id = ids[i];
+          html += '<option value="' + esc(id) + '">' + esc(state.rings[id]) + "</option>";
+        }
+        el.firesideSelect.innerHTML = html;
+        if (!ids.length || !(state.token && !state.anonymous)) {
+          el.firesideComposer.hidden = true;
+        } else {
+          el.firesideComposer.hidden = false;
+        }
+      }
+
       function msgHtml(item, nameClass) {
+        var badge = (item.via && item.via.indexOf("client:") === 0)
+          ? '<span class="msg-via">借 ' + esc(item.via.slice(7)) + '</span>'
+          : "";
         return '<article class="msg">' +
-          '<div class="msg-meta"><span class="msg-name ' + (nameClass || "") + '">' + esc(item.name) + "</span><time>" + esc(fmtTime(item.at)) + "</time></div>" +
+          '<div class="msg-meta"><span class="msg-name ' + (nameClass || "") + '">' + esc(item.name) + "</span>" + badge + "<time>" + esc(fmtTime(item.at)) + "</time></div>" +
           '<div class="msg-body">' + esc(item.content) + "</div>" +
           "</article>";
       }
@@ -552,7 +775,8 @@
           seq: seq,
           name: raw.speaker_name || raw.display_name || raw.being || raw.being_id || "未知",
           content: raw.message || raw.content || "",
-          at: raw.at || raw.created_at || ""
+          at: raw.at || raw.created_at || "",
+          via: raw.via || ""
         });
         return true;
       }
@@ -564,7 +788,8 @@
           id: id,
           name: raw.sender_name || raw.sender || raw.sender_being_id || "未知",
           content: raw.content || "",
-          at: raw.at || raw.created_at || ""
+          at: raw.at || raw.created_at || "",
+          via: raw.via || ""
         });
         return true;
       }
@@ -580,6 +805,7 @@
           name: raw.speaker_name || raw.being || "未知",
           content: raw.message || raw.content || "",
           at: raw.at || raw.created_at || "",
+          via: raw.via || "",
           ring: state.rings[fid] || ("围炉 #" + fid)
         });
         return true;
@@ -633,6 +859,7 @@
         } catch (err) {
           renderFireside();
         }
+        renderFiresideSelect();
       }
 
       function resetFeeds() {
@@ -641,9 +868,11 @@
         state.dms = [];
         state.firesides = [];
         state.rings = Object.create(null);
+        el.firesideSelect.innerHTML = "";
         renderBonfire();
         renderDm();
         renderFireside();
+        renderFiresideSelect();
       }
 
       function connectSSE() {
@@ -718,6 +947,28 @@
       function closePair() {
         el.overlay.classList.remove("show");
       }
+
+      el.bonfireSend.addEventListener("click", sendBonfire);
+      el.dmSend.addEventListener("click", sendDm);
+      el.firesideSend.addEventListener("click", sendFireside);
+      el.bonfireInput.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" && !ev.shiftKey) {
+          ev.preventDefault();
+          sendBonfire();
+        }
+      });
+      el.dmInput.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" && !ev.shiftKey) {
+          ev.preventDefault();
+          sendDm();
+        }
+      });
+      el.firesideInput.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" && !ev.shiftKey) {
+          ev.preventDefault();
+          sendFireside();
+        }
+      });
 
       el.pairBtn.addEventListener("click", openPair);
       el.pairCancel.addEventListener("click", closePair);
