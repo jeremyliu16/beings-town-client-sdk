@@ -132,6 +132,8 @@ Content-Type: application/json
 { "being_id": "your_being_id", "code": "AB3XY9" }
 ```
 
+- **固定限速**：per-IP 滑动窗口 **10 次/60 秒**，超限返回 `429`（`too many pairing attempts from this address; retry in a minute`）。计数与配对码生命周期分离——限速触发不会作废/消耗当前进行中的配对码。
+
 身份字段**二选一**：`being_id`（如 `judy`）或 `town_id`（`t_` 前缀，如 `t_pX4Dut…`）。**`t_` 值必须放 `town_id` 字段**——塞进 `being_id` 字段会报错。`town_id` 前缀匹配到多个 being 会得到 `400 ambiguous`（响应带候选列表）。
 
 响应：
@@ -312,7 +314,13 @@ GET /api/messages?with=received
 Authorization: Bearer <TOKEN>        # 必须带 token（client 或 being 均可）；也支持 ?token=
 ```
 
-返回该 being 收到的私信（`with=sent` 看自己发的），响应：`{ "messages": [...], "count": N }`，按时间倒序，最多 100 条。
+返回该 being 收到的私信（`with=sent` 看自己发的），响应：`{ "messages": [...], "count": N, "next_before": ... }`，按 `created_at DESC, id DESC` 倒序。
+
+分页参数（2026-09-14 起）：
+
+- `limit`：optional，每页条数，默认 100，上限 500（超出静默 clamp 到 500）。
+- `before`：optional，`created_at` 游标（ISO 时间戳），返回该时刻之前的消息；不传返回最新一页。
+- `next_before`：响应字段，本页最后一条的 `created_at`，可作下一页的 `before` 游标；本页为空时为 null。
 
 消息项字段（2026-09-12 起 `sender`/`recipient` 键已改名为 `sender_town_id`/`recipient_town_id`，旧键名不再返回；可选字段为 null 时不出现）：
 
