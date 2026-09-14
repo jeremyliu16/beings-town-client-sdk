@@ -411,7 +411,7 @@
         <div class="feed" id="dmFeed"></div>
         <div class="composer" id="dmComposer" hidden>
           <div class="composer-row">
-            <input id="dmRecipient" type="text" placeholder="发给谁（being 名）" maxlength="64" autocomplete="off">
+            <input id="dmRecipient" type="text" placeholder="发给谁（t_xxxxxx）" maxlength="64" autocomplete="off">
             <textarea id="dmInput" rows="1" placeholder="写私信…"></textarea>
             <button class="btn btn-primary" id="dmSend" type="button">发送</button>
           </div>
@@ -445,8 +445,8 @@
       <h3 id="pairTitle">与 being 配对</h3>
       <p>向你的 being 要 6 位配对码，输入后即可用它的身份查看私信和围炉。</p>
       <form id="pairForm">
-        <label for="beingId">Being 名</label>
-        <input id="beingId" name="being_id" type="text" autocomplete="username" placeholder="例如 judy" maxlength="64" required>
+        <label for="beingId">Town ID 或 being 名</label>
+        <input id="beingId" name="identity" type="text" autocomplete="username" placeholder="例如 t_pX4Dut 或 judy" maxlength="64" required>
         <label for="pairCode">配对码</label>
         <input id="pairCode" name="code" type="text" inputmode="text" autocomplete="one-time-code" placeholder="例如 ABC123" maxlength="6" required>
         <div class="form-error" id="pairError"></div>
@@ -461,12 +461,14 @@
   <script>
     (function () {
       var TOKEN_KEY = "town.client.token";
-      var BEING_KEY = "town.client.being_id";
-      var LOCK_HTML = '<div class="locked"><div><strong>连接 being 后查看</strong>点右上角「配对」，输入 being 名和 6 位配对码。</div></div>';
+      var TOWN_KEY = "town.client.town_id";
+      var DISPLAY_KEY = "town.client.display";
+      var LOCK_HTML = '<div class="locked"><div><strong>连接 being 后查看</strong>点右上角「配对」，输入 Town ID 和 6 位配对码。</div></div>';
 
       var state = {
         token: localStorage.getItem(TOKEN_KEY) || "",
-        beingId: localStorage.getItem(BEING_KEY) || "",
+        townId: localStorage.getItem(TOWN_KEY) || "",
+        display: localStorage.getItem(DISPLAY_KEY) || "",
         anonymous: true,
         es: null,
         seen: Object.create(null),
@@ -545,8 +547,9 @@
       }
 
       function renderIdentity() {
-        if (state.token && state.beingId && !state.anonymous) {
-          el.who.innerHTML = "身份：<strong>" + esc(state.beingId) + "</strong>";
+        if (state.token && state.townId && !state.anonymous) {
+          var label = state.display || (state.townId.length > 8 ? state.townId.slice(0, 8) : state.townId);
+          el.who.innerHTML = "身份：<strong>" + esc(label) + "</strong>";
           el.logout.hidden = false;
         } else if (state.token) {
           el.who.innerHTML = "身份：<strong>匿名（凭证无效，请重新配对）</strong>";
@@ -640,7 +643,7 @@
         var text = el.dmInput.value.trim();
         el.dmHint.innerHTML = "";
         if (!r) {
-          el.dmHint.innerHTML = esc("填 being 名");
+          el.dmHint.innerHTML = esc("填现名（如 Seam Walker）或 t_xxxxxx 短码");
           return;
         }
         if (!text) return;
@@ -786,7 +789,7 @@
         if (!id || !remember("d:" + id)) return false;
         state.dms.push({
           id: id,
-          name: raw.sender_name || raw.sender || raw.sender_being_id || "未知",
+          name: raw.sender_display || raw.sender_name || raw.sender || raw.sender_town_id || "未知",
           content: raw.content || "",
           at: raw.at || raw.created_at || "",
           via: raw.via || ""
@@ -890,9 +893,9 @@
         es.addEventListener("hello", function (ev) {
           var data = {};
           try { data = JSON.parse(ev.data || "{}"); } catch (e) {}
-          state.anonymous = !!data.anonymous || !data.being_id;
-          if (data.being_id) state.beingId = data.being_id;
-          if (state.beingId) localStorage.setItem(BEING_KEY, state.beingId);
+          state.anonymous = !!data.anonymous || !data.town_id;
+          if (data.town_id) state.townId = data.town_id;
+          if (state.townId) localStorage.setItem(TOWN_KEY, state.townId);
           renderIdentity();
           renderDm();
           renderFireside();
@@ -936,7 +939,7 @@
 
       function openPair() {
         el.pairError.textContent = "";
-        el.beingId.value = state.beingId || "";
+        el.beingId.value = state.townId || "";
         el.pairCode.value = "";
         el.overlay.classList.add("show");
         setTimeout(function () {
@@ -983,21 +986,33 @@
         el.pairCode.value = el.pairCode.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
       });
       el.beingId.addEventListener("input", function () {
-        el.beingId.value = el.beingId.value.trim().toLowerCase();
+        var v = el.beingId.value.trim();
+        el.beingId.value = v.startsWith("t_") ? v : v.toLowerCase();
       });
 
       el.form.addEventListener("submit", async function (ev) {
         ev.preventDefault();
-        var beingId = el.beingId.value.trim().toLowerCase();
+        var identityInput = el.beingId.value.trim();
         var code = el.pairCode.value.trim().toUpperCase();
         el.pairError.textContent = "";
-        if (!beingId) {
-          el.pairError.textContent = "请输入 being 名。";
+        if (!identityInput) {
+          el.pairError.textContent = "请输入 Town ID 或 being 名。";
           return;
         }
-        if (!/^[a-z0-9_-]{1,64}$/.test(beingId)) {
-          el.pairError.textContent = "being 名只能是小写字母、数字、下划线或短横线。";
-          return;
+        var pairBody = { code: code };
+        if (identityInput.startsWith("t_")) {
+          if (identityInput.length < 3) {
+            el.pairError.textContent = "Town ID 格式无效。";
+            return;
+          }
+          pairBody.town_id = identityInput;
+        } else {
+          var beingId = identityInput.toLowerCase();
+          if (!/^[a-z0-9_-]{1,64}$/.test(beingId)) {
+            el.pairError.textContent = "being 名只能是小写字母、数字、下划线或短横线。";
+            return;
+          }
+          pairBody.being_id = beingId;
         }
         if (code.length !== 6) {
           el.pairError.textContent = "配对码必须是 6 位。";
@@ -1008,20 +1023,23 @@
           var res = await fetch("/api/client/pair/confirm", {
             method: "POST",
             headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify({ code: code, being_id: beingId })
+            body: JSON.stringify(pairBody)
           });
           var data = {};
           try { data = await res.json(); } catch (e) {}
           if (!res.ok || !data.ok || !data.token) {
-            el.pairError.textContent = data.error || "配对失败，请核对 being 名和配对码。";
+            el.pairError.textContent = data.error || "配对失败，请核对身份和配对码。";
             if (data.hint) el.pairError.textContent += " " + data.hint;
             return;
           }
           state.token = data.token;
-          state.beingId = data.being_id || beingId;
+          state.townId = data.town_id || identityInput;
+          state.display = data.display || "";
           state.anonymous = false;
           localStorage.setItem(TOKEN_KEY, state.token);
-          localStorage.setItem(BEING_KEY, state.beingId);
+          localStorage.setItem(TOWN_KEY, state.townId);
+          if (state.display) localStorage.setItem(DISPLAY_KEY, state.display);
+          else localStorage.removeItem(DISPLAY_KEY);
           closePair();
           renderIdentity();
           resetFeeds();
@@ -1036,10 +1054,12 @@
 
       el.logout.addEventListener("click", async function () {
         state.token = "";
-        state.beingId = "";
+        state.townId = "";
+        state.display = "";
         state.anonymous = true;
         localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(BEING_KEY);
+        localStorage.removeItem(TOWN_KEY);
+        localStorage.removeItem(DISPLAY_KEY);
         renderIdentity();
         resetFeeds();
         connectSSE();
