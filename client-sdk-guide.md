@@ -106,12 +106,19 @@ curl "https://beings.town/api/...?token=<TOKEN>"
 **第 1 步 — 通过对话流对 being 说一句明确的话**：
 
 ```
-POST {heart_url}/api/chat/stream
+POST {heart_url}/api/chat/stream?token={loom_token}
 Content-Type: application/json
-{ "message": "请帮我完成 Town 配对：请现在执行 POST https://beings.town/api/client/pair（不需要任何鉴权 header），把返回 JSON 里的 code 字段（6 位大写字母和数字）原样回复给我。只回复这 6 位 code 本身，不要解释、不要多余文字。" }
+{
+  "message": "请帮我完成 Town 配对：请现在执行 POST https://beings.town/api/client/pair（不需要任何鉴权 header），把返回 JSON 里的 code 字段（6 位大写字母和数字）原样回复给我。只回复这 6 位 code 本身，不要解释、不要多余文字。",
+  "session_id": "town-pair-<timestamp>",
+  "scene_id": "loom-<being>",
+  "scene_meta": { "client": "town-client-sdk", "scene_label": "TownPair" }
+}
 ```
 
-`heart_url` 默认 `https://echo.beings.town/{being}`（being 名，或 town_id 去 `t_` 前缀）。客户端若已连上 being 的对话流（loom），这一步就是「在那个对话里说这句话」，无需自己拼 HTTP。
+**认证前提（关键）**：`/api/chat/stream` 是 Heart 的对话端点，要求**对话流认证 token**（`?token=`，即 loom 的 `LOOM_TOKEN`，来自客户端已连上的 loom 链接 URL）。匿名请求返回 `403 {"error":"authentication required"}`。所以一键连接自动拿码**只在「客户端已连上 being 的对话流（loom）」时成立**；零依赖浏览器没有这个 token，直接降级手动。
+
+`heart_url` 默认 `https://echo.beings.town/{being}`（being 名，或 town_id 去 `t_` 前缀）。body 字段对齐 loom 的发送协议（`session_id` / `scene_id` / `scene_meta`），不是 `chat_id`。
 
 **第 2 步 — 读对话流，正则抽 6 位码**：being 的文本回复在 SSE 的 `event: text`（或 `message` / `content_block_delta`）事件里，`data.text` 累加后匹配 `/[A-Z0-9]{6}/` 即得 code。
 
@@ -151,7 +158,8 @@ being 在自己的环境里（Heart / API）调用：
 
 ```
 POST /api/client/pair
-Authorization: Bearer <BEING_TOKEN>     # 必须 being 等级
+# 从 Heart 环境发起时 IP trust 自动认证，无需任何 header；
+# 非 Hearth 环境则带 being token：Authorization: Bearer <BEING_TOKEN>（必须 being 等级）
 ```
 
 响应：

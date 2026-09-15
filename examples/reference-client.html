@@ -467,7 +467,7 @@
   <div class="overlay" id="pairOverlay" role="dialog" aria-modal="true" aria-labelledby="pairTitle">
     <div class="modal">
       <h3 id="pairTitle">连接 town</h3>
-      <p id="pairIntro">输入 being 的 Town ID 或名字，客户端通过你与 ta 的对话流（loom / Heart chat）对 ta 说一句明确的话，ta 生成配对码后自动抽取回填完成连接。town 本身零改动。</p>
+      <p id="pairIntro">输入 being 的 Town ID 或名字完成连接。一键连接（自动拿码）需要客户端已连上 being 的对话流（loom / Heart chat，URL 带 <code>?token=</code>）；零依赖浏览器没有对话流认证，会自动降级为手动引导 + 粘码。town 本身零改动。</p>
       <form id="pairForm">
         <label for="beingId">Town ID 或 being 名</label>
         <input id="beingId" name="identity" type="text" autocomplete="username" placeholder="例如 t_pX4Dut 或 judy" maxlength="64" required>
@@ -1075,6 +1075,13 @@
         var heartUrl = (el.heartUrl.value || "").trim();
         if (!heartUrl) heartUrl = "https://echo.beings.town/" + (addrBody.being_id || addrBody.town_id.replace(/^t_/, ""));
 
+        // 一键连接（自动拿码）需要 loom 对话流认证 token（URL 带 ?token=）。
+        // 零依赖浏览器没有它 → 不进入等待态，直接引导手动。
+        if (!new URL(location.href).searchParams.get("token")) {
+          fallbackToManual("未检测到对话流认证（当前 URL 缺 ?token=）。零依赖浏览器无法自动拿码，请把下面这句话发给 being，再把 ta 回的 6 位码填进来。");
+          return;
+        }
+
         // 进入等待态：隐藏动作区，展示轮询提示
         el.pairActions.hidden = true;
         el.pairWaiting.hidden = false;
@@ -1085,7 +1092,7 @@
           // 通过对话流对 being 说一句明确的话，并轮询其回复抽 6 位码
           var code = await requestPairViaChat(heartUrl, identityInput);
           if (!code) {
-            fallbackToManual("未能自动拿到配对码（可能客户端没有直连对话流、或 being 尚未回复）。请把下面这句话发给 being，再把 ta 回的 6 位码填进来。");
+            fallbackToManual("being 尚未回复配对码（90 秒超时）。请把下面这句话发给 being，再把 ta 回的 6 位码填进来。");
             return;
           }
           // 自动回填配对码，完成授权
@@ -1103,12 +1110,25 @@
         el.manualPrompt.textContent = "请把这句话发给你的 being：" + pairPromptText();
       }
 
-      // 通过 being 对话流（Heart chat stream）发一句明确的话，并轮询抽 6 位码
+      // 通过 being 对话流（Heart chat stream）发一句明确的话，并轮询抽 6 位码。
+      // 认证对齐 loom：客户端连上 loom 时 URL 带 ?token=（Heart 对话认证 token），
+      // 用 `?token=` query 传。零依赖浏览器没有它 → 直接返回 null 降级手动，不傻等 403。
       async function requestPairViaChat(heartUrl, identityInput) {
-        var res = await fetch(heartUrl.replace(/\/+$/, "") + "/api/chat/stream", {
+        var loomToken = new URL(location.href).searchParams.get("token") || "";
+        if (!loomToken) return null;
+
+        var api = heartUrl.replace(/\/+$/, "");
+        var sep = api.indexOf("?") >= 0 ? "&" : "?";
+        var url = api + "/api/chat/stream" + sep + "token=" + encodeURIComponent(loomToken);
+        var res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-          body: JSON.stringify({ message: pairPromptText(), chat_id: "town-pair-" + Date.now() })
+          body: JSON.stringify({
+            message: pairPromptText(),
+            session_id: "town-pair-" + Date.now(),
+            scene_id: "loom-" + identityInput,
+            scene_meta: { client: "town-client-sdk/reference", scene_label: "TownPair" }
+          })
         });
         if (!res.ok || !res.body) return null;
 

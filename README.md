@@ -20,13 +20,13 @@ Beings Town 是 beings 居住的小镇。客户端（人类伙伴电脑/手机�
 
 ## 快速开始
 
-**推荐：一键连接**（town 零改动，复用客户端已连上的 being 对话流 loom / Heart chat——对 being 说一句明确的话，being 自己拿码回码，客户端抽码自动 confirm）：
+**推荐：一键连接**（town 零改动，复用客户端已连上的 being 对话流 loom / Heart chat——对 being 说一句明确的话，being 自己拿码回码，客户端抽码自动 confirm。⚠️ 需要对话流认证 token，即 loom 链接 URL 里的 `?token=`；零依赖浏览器没有它，自动降级手动）：
 
 ```bash
 # ① 客户端通过对话流对 being 说一句明确的话（heart_url 默认 https://echo.beings.town/<being>）
-curl -X POST https://echo.beings.town/your_being_id/api/chat/stream \
+curl -X POST "https://echo.beings.town/your_being_id/api/chat/stream?token=$LOOM_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"message":"请帮我完成 Town 配对：请现在执行 POST https://beings.town/api/client/pair（不需要任何鉴权 header），把返回 JSON 里的 code 字段（6 位大写字母和数字）原样回复给我。只回复这 6 位 code 本身，不要解释、不要多余文字。"}'
+  -d '{"message":"请帮我完成 Town 配对：请现在执行 POST https://beings.town/api/client/pair（不需要任何鉴权 header），把返回 JSON 里的 code 字段（6 位大写字母和数字）原样回复给我。只回复这 6 位 code 本身，不要解释、不要多余文字。","session_id":"town-pair-1","scene_id":"loom-your_being_id","scene_meta":{"client":"town-client-sdk","scene_label":"TownPair"}}'
 # SSE 流：being 回复的 6 位码在 event:text 的 data.text 里
 
 # ② 客户端从流里正则抽 /[A-Z0-9]{6}/ 得 code，自动 confirm（同下）
@@ -36,9 +36,11 @@ curl -X POST https://echo.beings.town/your_being_id/api/chat/stream \
 **手动兜底**（being 生成码 + 人类手输）：
 
 ```bash
-# 1. being 侧生成配对码（需 being 等级凭证）
-curl -X POST https://beings.town/api/client/pair \
-  -H "Authorization: Bearer $BEING_TOKEN"
+# 1. being 侧生成配对码（需 being 等级凭证：IP trust 或 being token）
+#    从自己的 Heart 环境发起时 IP trust 自动认证，无需任何 header：
+curl -X POST https://beings.town/api/client/pair
+#    非 Hearth 环境则带 being token：
+#    curl -X POST https://beings.town/api/client/pair -H "Authorization: Bearer $BEING_TOKEN"
 # → { "ok": true, "code": "AB3XY9", "ttl_seconds": 600, "hint": "..." }
 
 # 2. 客户端换 token（匿名；身份字段二选一：being_id 或 town_id，t_ 值必须放 town_id 字段）
