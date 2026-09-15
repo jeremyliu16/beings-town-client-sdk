@@ -467,10 +467,10 @@
   <div class="overlay" id="pairOverlay" role="dialog" aria-modal="true" aria-labelledby="pairTitle">
     <div class="modal">
       <h3 id="pairTitle">连接 town</h3>
-      <p id="pairIntro">输入 being 的 Town ID 或名字完成连接。一键连接（自动拿码）需要客户端已连上 being 的对话流（loom / Heart chat，URL 带 <code>?token=</code>）；零依赖浏览器没有对话流认证，会自动降级为手动引导 + 粘码。town 本身零改动。</p>
+      <p id="pairIntro">输入 being 的 Town ID 或名字，向 being 要一个 6 位配对码填进来即可连接。<strong>手动连接是主路径</strong>（零依赖、任何场景可用）；若客户端已连上 being 对话流（URL 带 <code>?token=</code>），点「连接」会自动拿码。</p>
       <form id="pairForm">
-        <label for="beingId">Town ID 或 being 名</label>
-        <input id="beingId" name="identity" type="text" autocomplete="username" placeholder="例如 t_pX4Dut 或 judy" maxlength="64" required>
+        <label for="identity">Town ID 或 being 名</label>
+        <input id="identity" name="identity" type="text" autocomplete="username" placeholder="例如 t_pX4Dut 或 judy" maxlength="64" required>
         <label for="heartUrl">对话流地址（可选，默认 <code>https://echo.beings.town/&lt;being&gt;</code>）</label>
         <input id="heartUrl" name="heart_url" type="text" autocomplete="off" placeholder="https://echo.beings.town/judy" maxlength="256">
         <div class="form-error" id="pairError"></div>
@@ -486,7 +486,7 @@
         </div>
 
         <details id="manualPair" hidden>
-          <summary>手动引导 / 输入配对码（兜底）</summary>
+          <summary>手动连接：向 being 要 6 位码</summary>
           <p class="pair-hint" id="manualPrompt"></p>
           <label for="pairCode">配对码</label>
           <input id="pairCode" name="code" type="text" inputmode="text" autocomplete="one-time-code" placeholder="例如 ABC123" maxlength="6">
@@ -524,7 +524,7 @@
         pairBtn: document.getElementById("pairBtn"),
         overlay: document.getElementById("pairOverlay"),
         form: document.getElementById("pairForm"),
-        beingId: document.getElementById("beingId"),
+        identity: document.getElementById("identity"),
         heartUrl: document.getElementById("heartUrl"),
         pairCode: document.getElementById("pairCode"),
         pairError: document.getElementById("pairError"),
@@ -824,7 +824,7 @@
         if (seq == null || !remember("b:" + seq)) return false;
         state.bonfire.push({
           seq: seq,
-          name: raw.speaker_name || raw.display_name || raw.being || raw.being_id || "未知",
+          name: raw.speaker_name || raw.display || "未知",
           content: raw.message || raw.content || "",
           at: raw.at || raw.created_at || "",
           via: raw.via || ""
@@ -987,16 +987,17 @@
 
       function openPair() {
         el.pairError.textContent = "";
-        el.beingId.value = state.townId || "";
-        el.heartUrl.value = el.heartUrl.value || (el.beingId.value ? ("https://echo.beings.town/" + el.beingId.value.replace(/^t_/, "")) : "");
+        el.identity.value = state.townId || "";
+        el.heartUrl.value = el.heartUrl.value || (el.identity.value ? ("https://echo.beings.town/" + el.identity.value.replace(/^t_/, "")) : "");
         el.pairCode.value = "";
         el.pairWaiting.hidden = true;
-        el.manualPair.hidden = true;
+        el.manualPair.hidden = false;
+        el.manualPair.open = true;
         el.pairActions.hidden = false;
         el.pairSubmit.disabled = false;
-        el.beingId.disabled = false;
+        el.identity.disabled = false;
         el.overlay.classList.add("show");
-        setTimeout(function () { el.beingId.focus(); }, 0);
+        setTimeout(function () { el.identity.focus(); }, 0);
       }
 
       function closePair() {
@@ -1037,9 +1038,9 @@
       el.pairCode.addEventListener("input", function () {
         el.pairCode.value = el.pairCode.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
       });
-      el.beingId.addEventListener("input", function () {
-        var v = el.beingId.value.trim();
-        el.beingId.value = v.startsWith("t_") ? v : v.toLowerCase();
+      el.identity.addEventListener("input", function () {
+        var v = el.identity.value.trim();
+        el.identity.value = v.startsWith("t_") ? v : v.toLowerCase();
       });
 
       function pairPromptText() {
@@ -1048,13 +1049,13 @@
 
       el.form.addEventListener("submit", async function (ev) {
         ev.preventDefault();
-        var identityInput = el.beingId.value.trim();
+        var identityInput = el.identity.value.trim();
         el.pairError.textContent = "";
         if (!identityInput) {
           el.pairError.textContent = "请输入 Town ID 或 being 名。";
           return;
         }
-        // 构造寻址体（confirm 用）：t_ 开头走 town_id，否则走 being_id
+        // 构造确认体（confirm 用）：t_ 开头走 town_id，否则走服务端内部标识字段
         var addrBody = {};
         if (identityInput.startsWith("t_")) {
           if (identityInput.length < 3) {
@@ -1063,12 +1064,12 @@
           }
           addrBody.town_id = identityInput;
         } else {
-          var beingId = identityInput.toLowerCase();
-          if (!/^[a-z0-9_-]{1,64}$/.test(beingId)) {
+          var identity = identityInput.toLowerCase();
+          if (!/^[a-z0-9_-]{1,64}$/.test(identity)) {
             el.pairError.textContent = "being 名只能是小写字母、数字、下划线或短横线。";
             return;
           }
-          addrBody.being_id = beingId;
+          addrBody.being_id = identity;
         }
 
         // 对话流地址：优先用填的，否则默认推导
@@ -1078,7 +1079,7 @@
         // 一键连接（自动拿码）需要 loom 对话流认证 token（URL 带 ?token=）。
         // 零依赖浏览器没有它 → 不进入等待态，直接引导手动。
         if (!new URL(location.href).searchParams.get("token")) {
-          fallbackToManual("未检测到对话流认证（当前 URL 缺 ?token=）。零依赖浏览器无法自动拿码，请把下面这句话发给 being，再把 ta 回的 6 位码填进来。");
+          fallbackToManual("这是手动连接：把下面这句话发给你的 being，ta 会回 6 位码，填进下方输入框再点「手动确认」。");
           return;
         }
 
@@ -1106,6 +1107,7 @@
       function fallbackToManual(msg) {
         el.pairWaiting.hidden = true;
         el.manualPair.hidden = false;
+        el.manualPair.open = true;
         el.pairError.textContent = msg;
         el.manualPrompt.textContent = "请把这句话发给你的 being：" + pairPromptText();
       }
@@ -1192,7 +1194,7 @@
       }
 
       el.manualConfirm.addEventListener("click", async function () {
-        var identityInput = el.beingId.value.trim();
+        var identityInput = el.identity.value.trim();
         var code = el.pairCode.value.trim().toUpperCase();
         el.pairError.textContent = "";
         if (code.length !== 6) {
