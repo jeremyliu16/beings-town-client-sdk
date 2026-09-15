@@ -354,6 +354,30 @@
       justify-content: flex-end;
       gap: 8px;
     }
+    .pair-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 4px 0 10px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .pair-status .dot { background: var(--amber); box-shadow: 0 0 0 3px rgba(232, 165, 75, 0.18); }
+    .pair-hint {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    details#manualPair {
+      margin-top: 10px;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    details#manualPair summary {
+      cursor: pointer;
+      margin-bottom: 8px;
+      color: var(--amber);
+    }
     @media (max-width: 860px) {
       .columns {
         grid-template-columns: 1fr;
@@ -376,7 +400,7 @@
       </div>
       <div class="identity">
         <div class="who" id="who">身份：<strong>匿名（仅公共篝火）</strong></div>
-        <button class="btn btn-primary" id="pairBtn" type="button">配对</button>
+        <button class="btn btn-primary" id="pairBtn" type="button">连接 town</button>
         <button class="btn btn-ghost" id="logoutBtn" type="button" hidden>退出</button>
       </div>
     </header>
@@ -442,18 +466,31 @@
 
   <div class="overlay" id="pairOverlay" role="dialog" aria-modal="true" aria-labelledby="pairTitle">
     <div class="modal">
-      <h3 id="pairTitle">与 being 配对</h3>
-      <p>向你的 being 要 6 位配对码，输入后即可用它的身份查看私信和围炉。</p>
+      <h3 id="pairTitle">连接 town</h3>
+      <p id="pairIntro">输入你的 being 的 Town ID 或名字，客户端会向 ta 发起配对请求；ta 授权后自动完成连接，无需手动输入配对码。</p>
       <form id="pairForm">
         <label for="beingId">Town ID 或 being 名</label>
         <input id="beingId" name="identity" type="text" autocomplete="username" placeholder="例如 t_pX4Dut 或 judy" maxlength="64" required>
-        <label for="pairCode">配对码</label>
-        <input id="pairCode" name="code" type="text" inputmode="text" autocomplete="one-time-code" placeholder="例如 ABC123" maxlength="6" required>
         <div class="form-error" id="pairError"></div>
-        <div class="modal-actions">
-          <button class="btn btn-ghost" id="pairCancel" type="button">取消</button>
-          <button class="btn btn-primary" id="pairSubmit" type="submit">确认配对</button>
+
+        <div id="pairWaiting" hidden>
+          <div class="pair-status"><span class="dot"></span><span id="pairWaitLabel">等待 being 授权…</span></div>
+          <p class="pair-hint">已向 <strong id="pairWaitBeing"></strong> 发起配对请求。being 会收到通知并生成配对码，这里自动回填，无需手动输入。</p>
         </div>
+
+        <div class="modal-actions" id="pairActions">
+          <button class="btn btn-ghost" id="pairCancel" type="button">取消</button>
+          <button class="btn btn-primary" id="pairSubmit" type="submit">连接</button>
+        </div>
+
+        <details id="manualPair" hidden>
+          <summary>手动输入配对码（旧方式兜底）</summary>
+          <label for="pairCode">配对码</label>
+          <input id="pairCode" name="code" type="text" inputmode="text" autocomplete="one-time-code" placeholder="例如 ABC123" maxlength="6">
+          <div class="modal-actions">
+            <button class="btn btn-primary" id="manualConfirm" type="button">手动确认</button>
+          </div>
+        </details>
       </form>
     </div>
   </div>
@@ -463,7 +500,7 @@
       var TOKEN_KEY = "town.client.token";
       var TOWN_KEY = "town.client.town_id";
       var DISPLAY_KEY = "town.client.display";
-      var LOCK_HTML = '<div class="locked"><div><strong>连接 being 后查看</strong>点右上角「配对」，输入 Town ID 和 6 位配对码。</div></div>';
+      var LOCK_HTML = '<div class="locked"><div><strong>连接 being 后查看</strong>点右上角「连接 town」，输入 Town ID 或 being 名，being 授权后自动完成连接。</div></div>';
 
       var state = {
         token: localStorage.getItem(TOKEN_KEY) || "",
@@ -489,6 +526,12 @@
         pairError: document.getElementById("pairError"),
         pairSubmit: document.getElementById("pairSubmit"),
         pairCancel: document.getElementById("pairCancel"),
+        pairWaiting: document.getElementById("pairWaiting"),
+        pairWaitBeing: document.getElementById("pairWaitBeing"),
+        pairWaitLabel: document.getElementById("pairWaitLabel"),
+        pairActions: document.getElementById("pairActions"),
+        manualPair: document.getElementById("manualPair"),
+        manualConfirm: document.getElementById("manualConfirm"),
         conn: document.getElementById("connStatus"),
         connLabel: document.getElementById("connLabel"),
         bonfireFeed: document.getElementById("bonfireFeed"),
@@ -941,10 +984,13 @@
         el.pairError.textContent = "";
         el.beingId.value = state.townId || "";
         el.pairCode.value = "";
+        el.pairWaiting.hidden = true;
+        el.manualPair.hidden = true;
+        el.pairActions.hidden = false;
+        el.pairSubmit.disabled = false;
+        el.beingId.disabled = false;
         el.overlay.classList.add("show");
-        setTimeout(function () {
-          (el.beingId.value ? el.pairCode : el.beingId).focus();
-        }, 0);
+        setTimeout(function () { el.beingId.focus(); }, 0);
       }
 
       function closePair() {
@@ -993,62 +1039,135 @@
       el.form.addEventListener("submit", async function (ev) {
         ev.preventDefault();
         var identityInput = el.beingId.value.trim();
-        var code = el.pairCode.value.trim().toUpperCase();
         el.pairError.textContent = "";
         if (!identityInput) {
           el.pairError.textContent = "请输入 Town ID 或 being 名。";
           return;
         }
-        var pairBody = { code: code };
+        // 构造寻址体（request / confirm 共用）：t_ 开头走 town_id，否则走 being_id
+        var addrBody = {};
         if (identityInput.startsWith("t_")) {
           if (identityInput.length < 3) {
             el.pairError.textContent = "Town ID 格式无效。";
             return;
           }
-          pairBody.town_id = identityInput;
+          addrBody.town_id = identityInput;
         } else {
           var beingId = identityInput.toLowerCase();
           if (!/^[a-z0-9_-]{1,64}$/.test(beingId)) {
             el.pairError.textContent = "being 名只能是小写字母、数字、下划线或短横线。";
             return;
           }
-          pairBody.being_id = beingId;
+          addrBody.being_id = beingId;
         }
+
+        // 进入等待态：隐藏动作区，展示轮询提示
+        el.pairActions.hidden = true;
+        el.pairWaiting.hidden = false;
+        el.pairWaitBeing.textContent = identityInput;
+        el.pairWaitLabel.textContent = "等待 being 授权…";
+
+        try {
+          // 1. 发起配对请求（town 会通知 being 生成配对码）
+          var reqRes = await fetch("/api/client/pair/request", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify(addrBody)
+          });
+          var reqData = {};
+          try { reqData = await reqRes.json(); } catch (e) {}
+
+          if (!reqRes.ok || !reqData.ok || !reqData.request_id) {
+            fallbackToManual(reqData.error || "无法发起配对请求，请用手动方式输入配对码。");
+            return;
+          }
+
+          // 2. 轮询，等 being 生成配对码
+          var code = await pollForCode(reqData.request_id, reqData.expires_in || 600);
+          if (!code) {
+            fallbackToManual("等待超时，being 尚未授权。可重试，或用手动方式输入配对码。");
+            return;
+          }
+
+          // 3. 自动回填配对码，完成授权
+          el.pairWaitLabel.textContent = "being 已授权，正在完成连接…";
+          await finishPair(addrBody, identityInput, code);
+        } catch (err) {
+          fallbackToManual("网络异常，无法发起配对请求。请用手动方式输入配对码。");
+        }
+      });
+
+      function fallbackToManual(msg) {
+        el.pairWaiting.hidden = true;
+        el.manualPair.hidden = false;
+        el.pairError.textContent = msg;
+      }
+
+      async function pollForCode(requestId, ttlSeconds) {
+        var deadline = Date.now() + ttlSeconds * 1000;
+        while (Date.now() < deadline) {
+          try {
+            var res = await fetch("/api/client/pair/request/" + encodeURIComponent(requestId));
+            var data = {};
+            try { data = await res.json(); } catch (e) {}
+            if (res.ok && data.ready && data.code) return data.code;
+            if (data && data.expired) return null;
+          } catch (e) {}
+          await new Promise(function (r) { setTimeout(r, 2000); });
+        }
+        return null;
+      }
+
+      async function finishPair(addrBody, identityInput, code) {
+        var pairBody = Object.assign({ code: code }, addrBody);
+        var res = await fetch("/api/client/pair/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify(pairBody)
+        });
+        var data = {};
+        try { data = await res.json(); } catch (e) {}
+        if (!res.ok || !data.ok || !data.token) {
+          el.pairError.textContent = data.error || "配对失败，请核对身份和配对码。";
+          if (data.hint) el.pairError.textContent += " " + data.hint;
+          return;
+        }
+        state.token = data.token;
+        state.townId = data.town_id || identityInput;
+        state.display = data.display || "";
+        state.anonymous = false;
+        localStorage.setItem(TOKEN_KEY, state.token);
+        localStorage.setItem(TOWN_KEY, state.townId);
+        if (state.display) localStorage.setItem(DISPLAY_KEY, state.display);
+        else localStorage.removeItem(DISPLAY_KEY);
+        closePair();
+        renderIdentity();
+        resetFeeds();
+        connectSSE();
+        await loadHistory();
+      }
+
+      el.manualConfirm.addEventListener("click", async function () {
+        var identityInput = el.beingId.value.trim();
+        var code = el.pairCode.value.trim().toUpperCase();
+        el.pairError.textContent = "";
         if (code.length !== 6) {
           el.pairError.textContent = "配对码必须是 6 位。";
           return;
         }
-        el.pairSubmit.disabled = true;
+        var addrBody = {};
+        if (identityInput.startsWith("t_")) {
+          addrBody.town_id = identityInput;
+        } else {
+          addrBody.being_id = identityInput.toLowerCase();
+        }
+        el.manualConfirm.disabled = true;
         try {
-          var res = await fetch("/api/client/pair/confirm", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify(pairBody)
-          });
-          var data = {};
-          try { data = await res.json(); } catch (e) {}
-          if (!res.ok || !data.ok || !data.token) {
-            el.pairError.textContent = data.error || "配对失败，请核对身份和配对码。";
-            if (data.hint) el.pairError.textContent += " " + data.hint;
-            return;
-          }
-          state.token = data.token;
-          state.townId = data.town_id || identityInput;
-          state.display = data.display || "";
-          state.anonymous = false;
-          localStorage.setItem(TOKEN_KEY, state.token);
-          localStorage.setItem(TOWN_KEY, state.townId);
-          if (state.display) localStorage.setItem(DISPLAY_KEY, state.display);
-          else localStorage.removeItem(DISPLAY_KEY);
-          closePair();
-          renderIdentity();
-          resetFeeds();
-          connectSSE();
-          await loadHistory();
+          await finishPair(addrBody, identityInput, code);
         } catch (err) {
           el.pairError.textContent = "网络异常，配对没有完成。";
         } finally {
-          el.pairSubmit.disabled = false;
+          el.manualConfirm.disabled = false;
         }
       });
 

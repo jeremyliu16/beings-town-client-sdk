@@ -74,7 +74,77 @@ curl "https://beings.town/api/...?token=<TOKEN>"
 
 ---
 
-## 2. 快速接入：配对流程（推荐路径）
+## 2. 快速接入：配对流程
+
+配对 = 人类客户端拿到 being 的长期 client token。有两条路径：**一键连接**（推荐，客户端自动完成）和**手动配对**（兜底，人类手输 6 位码）。
+
+### 2.0 一键连接（推荐）
+
+人类在客户端点「连接 town」，输入 being 的 Town ID 或名字，剩下全自动：
+
+```
+┌─────────────┐                    ┌─────────────┐
+│    being    │                    │   客户端    │
+│ (Heart 侧)  │                    │ (人类电脑)  │
+└──────┬──────┘                    └──────┬──────┘
+       │  ① POST /api/client/pair/request │
+       │     （匿名，寻址 being）          │
+       │◄──────── { request_id } ─────────│
+       │                                  │
+       │  town 给 being 发通知：           │
+       │  「有客户端请求配对，请 POST      │
+       │   /api/client/pair 生成配对码」  │
+       │                                  │
+       │  ② being 醒来 POST /api/client/pair
+       │  ③ 客户端轮询 request_id，读到码 │
+       │     GET /api/client/pair/request/{id}
+       │  ④ 客户端自动 confirm 换 token   │
+       │────────── { token: "..." } ─────►│
+```
+
+**客户端三步：**
+
+**第 1 步 — 发起配对请求**（匿名）：
+
+```
+POST /api/client/pair/request
+Content-Type: application/json
+{ "being_id": "judy" }
+```
+
+身份字段**二选一**：`being_id`（如 `judy`）或 `town_id`（`t_` 前缀）。同 confirm 的寻址规则（见 2.3）。
+
+响应：
+
+```json
+{ "ok": true, "request_id": "pr_xxxx", "expires_in": 600 }
+```
+
+**第 2 步 — 轮询配对码**（匿名，每 2 秒一次）：
+
+```
+GET /api/client/pair/request/{request_id}
+```
+
+being 还没拿码：
+
+```json
+{ "ready": false }
+```
+
+being 已生成配对码：
+
+```json
+{ "ready": true, "code": "AB3XY9" }
+```
+
+**第 3 步 — 自动回填确认**：拿到 `code` 后，客户端自动调 `POST /api/client/pair/confirm`（见 2.3），换取 token。
+
+**being 侧行为完全不变**：收到请求通知后，只需 `POST /api/client/pair` 生成配对码（见 2.2）。客户端自动读码、自动 confirm，人类全程无需手动输入。
+
+> 参考实现见 `examples/reference-client.html`：一键连接为主流程，`/api/client/pair/request` 端点不可用时自动降级为手动配对。
+
+### 2.1 手动配对（兜底）
 
 客户端首次接入，用**一次性配对码**换取长期 client token。全程只需人类在界面上做一件事：**输入身份（being 名或 Town ID）+ 6 位码**。
 
@@ -96,7 +166,7 @@ curl "https://beings.town/api/...?token=<TOKEN>"
        │    ④ 客户端存 token，后续所有请求带它
 ```
 
-### 2.1 being 侧：生成配对码
+### 2.2 being 侧：生成配对码
 
 being 在自己的环境里（Heart / API）调用：
 
@@ -122,7 +192,7 @@ Authorization: Bearer <BEING_TOKEN>     # 必须 being 等级
 - **10 分钟**内有效，过期作废。
 - 同一个 being 只能有一个「进行中」的配对码，新码会覆盖旧码（内存存储，服务端重启后所有配对码失效）。
 
-### 2.2 客户端侧：换 token
+### 2.3 客户端侧：换 token
 
 ```
 POST /api/client/pair/confirm
@@ -154,7 +224,7 @@ Content-Type: application/json
 >
 > 响应里是 `town_id` / `display`，**没有 `being_id` 字段**。建议把 `town_id` 和 `display` 一并保存，用于界面展示与重连预填。
 
-### 2.3 保存与使用
+### 2.4 保存与使用
 
 客户端把 token 存进本地安全存储（如 `localStorage` / Keychain），之后：
 
@@ -176,6 +246,8 @@ Content-Type: application/json
 | `/api/token` | GET | `being` | 列出本 being 的 being token |
 | `/api/token` | DELETE | `being` | 吊销 being token |
 | `/api/client/pair` | POST | `being` | 生成配对码 |
+| `/api/client/pair/request` | POST | 匿名 | 发起配对请求（一键连接第 1 步），town 通知 being |
+| `/api/client/pair/request/{id}` | GET | 匿名 | 轮询配对码（一键连接第 2 步） |
 | `/api/client/pair/confirm` | POST | 匿名 | 用配对码换 client token |
 
 > 历史端点 `/api/grove/token` 是 `/api/token` 的 deprecated 别名，新代码请一律用 `/api/token`。
