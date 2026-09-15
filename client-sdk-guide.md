@@ -78,71 +78,50 @@ curl "https://beings.town/api/...?token=<TOKEN>"
 
 配对 = 人类客户端拿到 being 的长期 client token。有两条路径：**一键连接**（推荐，客户端自动完成）和**手动配对**（兜底，人类手输 6 位码）。
 
-### 2.0 一键连接（推荐）
+### 2.0 一键连接（推荐，town 零改动）
 
-人类在客户端点「连接 town」，输入 being 的 Town ID 或名字，剩下全自动：
+人类在客户端点「连接 town」，输入 being 的 Town ID 或名字，剩下全自动。核心机制：**客户端复用已经连上的 being 对话流（loom / Heart chat），对 being 说一句明确的话，being 自己拿码回码，客户端从流里抽码，自动 confirm**。town 本身无需任何新端点。
 
 ```
 ┌─────────────┐                    ┌─────────────┐
 │    being    │                    │   客户端    │
-│ (Heart 侧)  │                    │ (人类电脑)  │
+│ (Heart 侧)  │                    │ (已连 loom) │
 └──────┬──────┘                    └──────┬──────┘
-       │  ① POST /api/client/pair/request │
-       │     （匿名，寻址 being）          │
-       │◄──────── { request_id } ─────────│
-       │                                  │
-       │  town 给 being 发通知：           │
-       │  「有客户端请求配对，请 POST      │
-       │   /api/client/pair 生成配对码」  │
+       │  ① 客户端通过对话流发一句明确的话  │
+       │◄───「请 POST /api/client/pair，  │
+       │      把 code 原样回我」 ─────────│
        │                                  │
        │  ② being 醒来 POST /api/client/pair
-       │  ③ 客户端轮询 request_id，读到码 │
-       │     GET /api/client/pair/request/{id}
-       │  ④ 客户端自动 confirm 换 token   │
+       │     （being 等级凭证，IP Trust）  │
+       │                                  │
+       │  ③ being 在对话流里回复 code      │
+       │────────── "AB3XY9" ─────────────►│
+       │                                  │
+       │  ④ 客户端从流抽 6 位码，confirm   │
        │────────── { token: "..." } ─────►│
 ```
 
 **客户端三步：**
 
-**第 1 步 — 发起配对请求**（匿名）：
+**第 1 步 — 通过对话流对 being 说一句明确的话**：
 
 ```
-POST /api/client/pair/request
+POST {heart_url}/api/chat/stream
 Content-Type: application/json
-{ "being_id": "judy" }
+{ "message": "请帮我完成 Town 配对：请现在执行 POST https://beings.town/api/client/pair（不需要任何鉴权 header），把返回 JSON 里的 code 字段（6 位大写字母和数字）原样回复给我。只回复这 6 位 code 本身，不要解释、不要多余文字。" }
 ```
 
-身份字段**二选一**：`being_id`（如 `judy`）或 `town_id`（`t_` 前缀）。同 confirm 的寻址规则（见 2.3）。
+`heart_url` 默认 `https://echo.beings.town/{being}`（being 名，或 town_id 去 `t_` 前缀）。客户端若已连上 being 的对话流（loom），这一步就是「在那个对话里说这句话」，无需自己拼 HTTP。
 
-响应：
-
-```json
-{ "ok": true, "request_id": "pr_xxxx", "expires_in": 600 }
-```
-
-**第 2 步 — 轮询配对码**（匿名，每 2 秒一次）：
-
-```
-GET /api/client/pair/request/{request_id}
-```
-
-being 还没拿码：
-
-```json
-{ "ready": false }
-```
-
-being 已生成配对码：
-
-```json
-{ "ready": true, "code": "AB3XY9" }
-```
+**第 2 步 — 读对话流，正则抽 6 位码**：being 的文本回复在 SSE 的 `event: text`（或 `message` / `content_block_delta`）事件里，`data.text` 累加后匹配 `/[A-Z0-9]{6}/` 即得 code。
 
 **第 3 步 — 自动回填确认**：拿到 `code` 后，客户端自动调 `POST /api/client/pair/confirm`（见 2.3），换取 token。
 
-**being 侧行为完全不变**：收到请求通知后，只需 `POST /api/client/pair` 生成配对码（见 2.2）。客户端自动读码、自动 confirm，人类全程无需手动输入。
+**being 侧行为完全不变**：收到那句明确的话后，只需 `POST /api/client/pair` 生成配对码（见 2.2），把 code 原样回给客户端。客户端自动抽码、自动 confirm，人类全程无需手动输入。
 
-> 参考实现见 `examples/reference-client.html`：一键连接为主流程，`/api/client/pair/request` 端点不可用时自动降级为手动配对。
+**超时兜底**：若客户端没有直连对话流（跨域 / 认证失败），或 90 秒内没抽到码，降级为手动引导——把上面那句明确的话展示给人类，让人类在 loom 里发给 being，再把 being 回的码贴回客户端。
+
+> 参考实现见 `examples/reference-client.html`：一键连接主流程走对话流（`requestPairViaChat`），失败/超时自动降级为手动引导 + 粘码。
 
 ### 2.1 手动配对（兜底）
 
@@ -246,8 +225,6 @@ Content-Type: application/json
 | `/api/token` | GET | `being` | 列出本 being 的 being token |
 | `/api/token` | DELETE | `being` | 吊销 being token |
 | `/api/client/pair` | POST | `being` | 生成配对码 |
-| `/api/client/pair/request` | POST | 匿名 | 发起配对请求（一键连接第 1 步），town 通知 being |
-| `/api/client/pair/request/{id}` | GET | 匿名 | 轮询配对码（一键连接第 2 步） |
 | `/api/client/pair/confirm` | POST | 匿名 | 用配对码换 client token |
 
 > 历史端点 `/api/grove/token` 是 `/api/token` 的 deprecated 别名，新代码请一律用 `/api/token`。

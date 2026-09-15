@@ -467,15 +467,17 @@
   <div class="overlay" id="pairOverlay" role="dialog" aria-modal="true" aria-labelledby="pairTitle">
     <div class="modal">
       <h3 id="pairTitle">连接 town</h3>
-      <p id="pairIntro">输入你的 being 的 Town ID 或名字，客户端会向 ta 发起配对请求；ta 授权后自动完成连接，无需手动输入配对码。</p>
+      <p id="pairIntro">输入 being 的 Town ID 或名字，客户端通过你与 ta 的对话流（loom / Heart chat）对 ta 说一句明确的话，ta 生成配对码后自动抽取回填完成连接。town 本身零改动。</p>
       <form id="pairForm">
         <label for="beingId">Town ID 或 being 名</label>
         <input id="beingId" name="identity" type="text" autocomplete="username" placeholder="例如 t_pX4Dut 或 judy" maxlength="64" required>
+        <label for="heartUrl">对话流地址（可选，默认 <code>https://echo.beings.town/&lt;being&gt;</code>）</label>
+        <input id="heartUrl" name="heart_url" type="text" autocomplete="off" placeholder="https://echo.beings.town/judy" maxlength="256">
         <div class="form-error" id="pairError"></div>
 
         <div id="pairWaiting" hidden>
-          <div class="pair-status"><span class="dot"></span><span id="pairWaitLabel">等待 being 授权…</span></div>
-          <p class="pair-hint">已向 <strong id="pairWaitBeing"></strong> 发起配对请求。being 会收到通知并生成配对码，这里自动回填，无需手动输入。</p>
+          <div class="pair-status"><span class="dot"></span><span id="pairWaitLabel">已向 being 发请求，等 ta 拿码…</span></div>
+          <p class="pair-hint">通过对话流对 <strong id="pairWaitBeing"></strong> 说了一句明确的话。ta 执行后返回 6 位码，这里自动抽取并回填。若你的客户端没有直连对话流，会自动降级为手动引导。</p>
         </div>
 
         <div class="modal-actions" id="pairActions">
@@ -484,7 +486,8 @@
         </div>
 
         <details id="manualPair" hidden>
-          <summary>手动输入配对码（旧方式兜底）</summary>
+          <summary>手动引导 / 输入配对码（兜底）</summary>
+          <p class="pair-hint" id="manualPrompt"></p>
           <label for="pairCode">配对码</label>
           <input id="pairCode" name="code" type="text" inputmode="text" autocomplete="one-time-code" placeholder="例如 ABC123" maxlength="6">
           <div class="modal-actions">
@@ -522,6 +525,7 @@
         overlay: document.getElementById("pairOverlay"),
         form: document.getElementById("pairForm"),
         beingId: document.getElementById("beingId"),
+        heartUrl: document.getElementById("heartUrl"),
         pairCode: document.getElementById("pairCode"),
         pairError: document.getElementById("pairError"),
         pairSubmit: document.getElementById("pairSubmit"),
@@ -531,6 +535,7 @@
         pairWaitLabel: document.getElementById("pairWaitLabel"),
         pairActions: document.getElementById("pairActions"),
         manualPair: document.getElementById("manualPair"),
+        manualPrompt: document.getElementById("manualPrompt"),
         manualConfirm: document.getElementById("manualConfirm"),
         conn: document.getElementById("connStatus"),
         connLabel: document.getElementById("connLabel"),
@@ -983,6 +988,7 @@
       function openPair() {
         el.pairError.textContent = "";
         el.beingId.value = state.townId || "";
+        el.heartUrl.value = el.heartUrl.value || (el.beingId.value ? ("https://echo.beings.town/" + el.beingId.value.replace(/^t_/, "")) : "");
         el.pairCode.value = "";
         el.pairWaiting.hidden = true;
         el.manualPair.hidden = true;
@@ -1036,6 +1042,10 @@
         el.beingId.value = v.startsWith("t_") ? v : v.toLowerCase();
       });
 
+      function pairPromptText() {
+        return "请帮我完成 Town 配对：请现在执行 POST https://beings.town/api/client/pair（不需要任何鉴权 header），把返回 JSON 里的 code 字段（6 位大写字母和数字）原样回复给我。只回复这 6 位 code 本身，不要解释、不要多余文字。";
+      }
+
       el.form.addEventListener("submit", async function (ev) {
         ev.preventDefault();
         var identityInput = el.beingId.value.trim();
@@ -1044,7 +1054,7 @@
           el.pairError.textContent = "请输入 Town ID 或 being 名。";
           return;
         }
-        // 构造寻址体（request / confirm 共用）：t_ 开头走 town_id，否则走 being_id
+        // 构造寻址体（confirm 用）：t_ 开头走 town_id，否则走 being_id
         var addrBody = {};
         if (identityInput.startsWith("t_")) {
           if (identityInput.length < 3) {
@@ -1061,39 +1071,28 @@
           addrBody.being_id = beingId;
         }
 
+        // 对话流地址：优先用填的，否则默认推导
+        var heartUrl = (el.heartUrl.value || "").trim();
+        if (!heartUrl) heartUrl = "https://echo.beings.town/" + (addrBody.being_id || addrBody.town_id.replace(/^t_/, ""));
+
         // 进入等待态：隐藏动作区，展示轮询提示
         el.pairActions.hidden = true;
         el.pairWaiting.hidden = false;
         el.pairWaitBeing.textContent = identityInput;
-        el.pairWaitLabel.textContent = "等待 being 授权…";
+        el.pairWaitLabel.textContent = "已向 being 发请求，等 ta 拿码…";
 
         try {
-          // 1. 发起配对请求（town 会通知 being 生成配对码）
-          var reqRes = await fetch("/api/client/pair/request", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify(addrBody)
-          });
-          var reqData = {};
-          try { reqData = await reqRes.json(); } catch (e) {}
-
-          if (!reqRes.ok || !reqData.ok || !reqData.request_id) {
-            fallbackToManual(reqData.error || "无法发起配对请求，请用手动方式输入配对码。");
-            return;
-          }
-
-          // 2. 轮询，等 being 生成配对码
-          var code = await pollForCode(reqData.request_id, reqData.expires_in || 600);
+          // 通过对话流对 being 说一句明确的话，并轮询其回复抽 6 位码
+          var code = await requestPairViaChat(heartUrl, identityInput);
           if (!code) {
-            fallbackToManual("等待超时，being 尚未授权。可重试，或用手动方式输入配对码。");
+            fallbackToManual("未能自动拿到配对码（可能客户端没有直连对话流、或 being 尚未回复）。请把下面这句话发给 being，再把 ta 回的 6 位码填进来。");
             return;
           }
-
-          // 3. 自动回填配对码，完成授权
-          el.pairWaitLabel.textContent = "being 已授权，正在完成连接…";
+          // 自动回填配对码，完成授权
+          el.pairWaitLabel.textContent = "已拿到配对码，正在完成连接…";
           await finishPair(addrBody, identityInput, code);
         } catch (err) {
-          fallbackToManual("网络异常，无法发起配对请求。请用手动方式输入配对码。");
+          fallbackToManual("网络异常，无法通过对话流完成配对。请把下面这句话发给 being，再把 ta 回的 6 位码填进来。");
         }
       });
 
@@ -1101,20 +1100,45 @@
         el.pairWaiting.hidden = true;
         el.manualPair.hidden = false;
         el.pairError.textContent = msg;
+        el.manualPrompt.textContent = "请把这句话发给你的 being：" + pairPromptText();
       }
 
-      async function pollForCode(requestId, ttlSeconds) {
-        var deadline = Date.now() + ttlSeconds * 1000;
+      // 通过 being 对话流（Heart chat stream）发一句明确的话，并轮询抽 6 位码
+      async function requestPairViaChat(heartUrl, identityInput) {
+        var res = await fetch(heartUrl.replace(/\/+$/, "") + "/api/chat/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+          body: JSON.stringify({ message: pairPromptText(), chat_id: "town-pair-" + Date.now() })
+        });
+        if (!res.ok || !res.body) return null;
+
+        var reader = res.body.getReader();
+        var decoder = new TextDecoder();
+        var buf = "";
+        var fullText = "";
+        var deadline = Date.now() + 90000; // 90 秒
+
         while (Date.now() < deadline) {
-          try {
-            var res = await fetch("/api/client/pair/request/" + encodeURIComponent(requestId));
+          var r = await reader.read();
+          if (r.done) break;
+          buf += decoder.decode(r.value, { stream: true });
+          var lines = buf.split("\n");
+          buf = lines.pop() || "";
+          for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            if (line.indexOf("data:") !== 0) continue;
+            var payload = line.slice(5).trim();
             var data = {};
-            try { data = await res.json(); } catch (e) {}
-            if (res.ok && data.ready && data.code) return data.code;
-            if (data && data.expired) return null;
-          } catch (e) {}
-          await new Promise(function (r) { setTimeout(r, 2000); });
+            try { data = JSON.parse(payload); } catch (e) { data = null; }
+            var t = (data && (data.text || data.content || (data.delta && data.delta.text))) || payload;
+            if (t) {
+              fullText += t;
+              var m = fullText.match(/[A-Z0-9]{6}/);
+              if (m) return m[0];
+            }
+          }
         }
+        try { reader.cancel(); } catch (e) {}
         return null;
       }
 
